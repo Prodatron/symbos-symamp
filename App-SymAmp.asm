@@ -2916,7 +2916,7 @@ bmplod0 ;...show error
 ;### SUB-ROUTINEN #############################################################
 ;==============================================================================
 
-hrdbas  db 0    ;0=N/A, 1=CPC, 2=MSX, 3=PCW, 4=EP, 5=NXT, 6=SVM
+hrdbas  db 0    ;0=N/A, 1=CPC, 2=MSX, 3=PCW, 4=EP, 5=NXT, 6=SVM, 7=ISA
 hrdext  dw 0    ;b0=PSG, b1=MP3, b2=Playcity, b3=Darky, b4=OPL4, b6=ZNX turbosound, b7=SVM dual psg
 hrddem  db 0    ;+1/+2=psg/opl4 daemon existing
 
@@ -2927,6 +2927,7 @@ sysini  ld hl,jmp_sysinf        ;*** Computer-Typ holen
         ld iy,66+2+6+8
         rst #28                 ;cfgcpctyp=computer typ
         ld a,(cfgcpctyp)
+;ld a,19
         and 31
         cp 6
         ld e,1
@@ -2949,6 +2950,9 @@ sysini  ld hl,jmp_sysinf        ;*** Computer-Typ holen
         cp 20
         ld e,5
         jr z,sysini1    ;20    -> 5=nxt psg
+        cp 19
+        ld e,7
+        jr z,sysini1    ;19    -> 7=isa psg
         ;...
         ld e,0          ;?     -> 0=unsupported base hardware
 sysini1 ld a,e

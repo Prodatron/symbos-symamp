@@ -1128,6 +1128,7 @@ R7S2	or 0
 R7S1	or 0
 	;ld h,a
 	;ld (REG7+1),a
+	exx
 	jp SENDREG
 
 
@@ -1724,7 +1725,7 @@ reg11 db 0
 reg12 db 0
 
 ;Balance les registres aux PSG
-;a=val REG7
+;a=val REG7, (reg0-5), (reg6+1),(reg8-12),(reg13+1)
 .SENDREG jp sendregCPC
 sendregMSX
     ld hl,(reg0)
@@ -1877,7 +1878,6 @@ RETRIG	ld a,0		;retrig donne par colonne dans instr ou header instr
 	ld a,h
 REG13G	ld d,13		;reg 13 select
 skmregd call cpcskm
-    exx
 	ld (REG13OLD+1),a
 	ret	
 

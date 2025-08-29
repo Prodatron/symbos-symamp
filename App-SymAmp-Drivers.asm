@@ -111,7 +111,7 @@ MEND
 ;==============================================================================
 
 ;### HRDDET -> searches for additional sound hardware
-;### Input      (hrdbas)=platform (1=CPC, 2=MSX, 3=PCW, 4=EP, 5=NXT, 6=SVM)
+;### Input      (hrdbas)=platform (1=CPC, 2=MSX, 3=PCW, 4=EP, 5=NXT, 6=SVM, 7=ISA)
 ;### Output     HL=hardware (b[0]=PSG, b[1]=MP3MSX, b[2]=PlayCity, b[3]=Darky, b[4]=OPL4, b[5]=OPL3, b[6]=TurboSound)
 hrddet  ld a,(hrdbas)
         ld hl,0
@@ -126,6 +126,7 @@ hrddet  ld a,(hrdbas)
         jr z,hrddete        ;nxt
         cp 7
         jr c,hrddetf        ;svm
+        jr z,hrddetg        ;isa
         ret
 hrddeta call m3cres                 ;*** CPC
         ld hl,1
@@ -180,6 +181,8 @@ hrddet6 push hl
 hrddete ld hl,1+64                  ;*** NXT
         ret
 hrddetf ld hl,1+128                 ;*** SVM
+        ret
+hrddetg ld hl,1                     ;*** ISA
         ret
 
 ;### HRDINI -> selects correct hardware and inits it
@@ -292,7 +295,7 @@ op3set1 ld a,b
         ret
 
 ;### PSGSET -> patches sound routines for selected PSG sound hardware
-;### Input      A=hardware (1=CPC PSG, 2=MSX PSG, 3=PCW PSG, 4=EP Dave, 5=ZXS PSG, 6=SVM PSG,
+;### Input      A=hardware (1=CPC PSG, 2=MSX PSG, 3=PCW PSG, 4=EP Dave, 5=ZXS PSG, 6=SVM PSG, 7=ISA PSG,
 ;###                        16=CPC PlayCity, 17=MSX Darky, 18=ZXS TurboSound, 19=SVM Dual PSG)
 ;###            B=module type (0=SKM, 1=ST2, 3=PT3)
 
@@ -304,6 +307,7 @@ dw sendreg0  ,pcwskm,pcwreg,pcwpt3,pcwini  ;pcw psg
 dw sendreg0  ,eprskm,eprreg,eprpt3,eprini  ;ep  dave
 dw sendreg0  ,zxsskm,zxsreg,zxspt3,zxsini  ;zxs psg
 dw sendreg0  ,svmskm,svmreg,svmpt3,svmini  ;svm psg
+dw sendregISA,0     ,isareg,isapt3,isaini  ;isa psg
 
 psgsetrou1
 dw sendreg0  ,pcyskm,pcyreg,pcypt3,pcyini  ;cpc playcity
@@ -318,7 +322,7 @@ db  1:dw st2reg+1
 db  1:dw TS_Play_ROUT+1
 db  0
 
-psgsetst3   dw cpcst2,msxst2,pcwst2,eprst2,zxsst2,svmst2,0,0,0,0,0,0,0,0,0,pcyst2,dkyst2,zxsst2,svmst2
+psgsetst3   dw cpcst2,msxst2,pcwst2,eprst2,zxsst2,svmst2,isast2,0,0,0,0,0,0,0,0,pcyst2,dkyst2,zxsst2,svmst2
 
 psgset  push bc
         dec a
@@ -519,21 +523,18 @@ msxst2  out (#a0),a
 ;### MSXPT3 -> sends PT3 registers to the MSX-PSG
 ;### Input      (VARS1+VRS_AYREGS)=register (0-13)
 msxpt3  ld hl,VARS1+VRS_AYREGS      ;channel 0-2
-        ld c,#a0
+        ld c,#a1
         xor a
-msxpt31 out (c),a
-        inc c
+msxpt31 out (#a0),a
         outi
-        dec c
         inc a
         cp 13
         jr nz,msxpt31
-        out (c),a
+        out (#a0),a
         ld a,(hl)
         and a
         ret m
-        inc c
-        out (c),a
+        out (#a1),a
         ret
 
 
@@ -642,6 +643,206 @@ sv2pt3  ld hl,VARS1+VRS_AYREGS      ;channel 0-2
         ld hl,VARS2+VRS_AYREGS      ;channel 3-5
         ld c,P_PSG2SEL
         jr svmpt30
+
+
+;==============================================================================
+;### ISA PSG ##################################################################
+;==============================================================================
+
+ISA_AY_INDEX    equ #40
+ISA_AY_WRITE    equ #41
+
+
+;### ISAINI -> inits ISA-PSG sound output
+;### Input      A=module type (0=SKM, 1=ST2, 2=MP3, 3=PT3)
+isaini  ld hl,NT_CPC    ;set CPC frequency for PT3 modules
+        jp pt3frq
+
+;### ISAREG -> reads PSG register from the ISA-PSG
+;### Input      C=register
+;### Output     A=value
+;### Destroyed  -
+isareg  push bc
+        push hl
+        ld b,0
+        ld hl,VARS1+VRS_AYREGS
+        add hl,bc
+        ld a,(hl)
+        pop hl
+        pop bc
+        ret
+
+
+;------------------------------------------------------------------------------
+;@@@ MODULE DRIVERS @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+;------------------------------------------------------------------------------
+
+;### ISAST2 -> sends ST2 register to the ISA-PSG
+;### Input      A=register, C=data
+isast2  jp isast20
+
+isast20 push de
+        push hl
+        ld e,a
+        ld d,0
+        ld hl,VARS1+VRS_AYREGS
+        add hl,de
+        ld (hl),c
+        cp 6
+        jr c,isast21
+        jr nz,isast23
+        out (ISA_AY_INDEX),a    ;reg 6 -> noise register
+        ld a,c
+        add a
+        out (ISA_AY_WRITE),a
+        pop hl
+        pop de
+        ret
+isast21 bit 0,a                 ;reg 0-5 -> tone registers
+        jr nz,isast22
+        ld (hl),c
+        pop hl
+        pop de
+        ret
+isast22 dec hl
+        ld l,(hl)
+        ld h,c
+        ld c,a
+        dec c
+        call isapt32
+        pop hl
+        pop de
+        ret
+isast23 cp 11
+        jr z,isast24
+        cp 12
+        jr z,isast25
+        out (ISA_AY_INDEX),a    ;reg 7-10, 13
+        ld a,c
+        out (ISA_AY_WRITE),a
+        pop hl
+        pop de
+        ret
+isast24 ld a,c                  ;reg 11 -> hardware envelope low
+        ld (isast25+1),a
+        pop hl
+        pop de
+        ret
+isast25 ld l,0                  ;reg 12 -> hardware envelope high
+        ld h,c
+        call isapt36
+        pop hl
+        pop de
+        ret
+
+;### sendregISA -> sends all PT3 registers to the ISA-PSG
+;### Input      A=val REG7, (reg0-5), (reg6+1),(reg8-12),(reg13+1)
+sendregISA
+                      ld (VARS1+VRS_AYREGS+7),a
+        ld a,(reg0)  :ld (VARS1+VRS_AYREGS+0),a
+        ld a,(reg1)  :ld (VARS1+VRS_AYREGS+1),a
+        ld a,(reg2)  :ld (VARS1+VRS_AYREGS+2),a
+        ld a,(reg3)  :ld (VARS1+VRS_AYREGS+3),a
+        ld a,(reg4)  :ld (VARS1+VRS_AYREGS+4),a
+        ld a,(reg5)  :ld (VARS1+VRS_AYREGS+5),a
+        ld a,(reg6+1):ld (VARS1+VRS_AYREGS+6),a
+        ld a,(reg8)  :ld (VARS1+VRS_AYREGS+8),a
+        ld a,(reg9)  :ld (VARS1+VRS_AYREGS+9),a
+        ld a,(reg10) :ld (VARS1+VRS_AYREGS+10),a
+        ld a,(reg11) :ld (VARS1+VRS_AYREGS+11),a
+        ld a,(reg12) :ld (VARS1+VRS_AYREGS+12),a
+        call isapt30
+        ld a,(reg13+1)
+        or a
+        ret z
+        jr isapt35
+
+;### ISAPT3 -> sends PT3 registers to the ISA-PSG
+;### Input      (VARS1+VRS_AYREGS)=register (0-13), send reg13 only if bit7=0
+isapt3  call isapt30                ;send 0-12
+        ld a,(VARS1+VRS_AYREGS+13)  ;reg 13 -> send, if changed
+        add a
+        ret m
+isapt35 ld c,a
+        ld a,13
+        out (ISA_AY_INDEX),a
+        ld a,c
+        out (ISA_AY_WRITE),a
+        ret
+
+isapt30 ld hl,(VARS1+VRS_AYREGS+0)  ;reg 0-5 -> tone registers
+        ld c,0
+        call isapt32
+        ld hl,(VARS1+VRS_AYREGS+2)
+        ld c,2
+        call isapt32
+        ld hl,(VARS1+VRS_AYREGS+4)
+        ld c,4
+        call isapt32
+
+        ld a,6                      ;reg 6 -> noise register
+        out (ISA_AY_INDEX),a
+        ld hl,VARS1+VRS_AYREGS+6
+        ld a,(hl)
+        inc hl
+        add a
+        out (ISA_AY_WRITE),a
+
+        ld a,7                      ;reg 7 -> enable register
+        out (ISA_AY_INDEX),a
+        ld a,(hl)
+        inc hl
+        out (ISA_AY_WRITE),a
+
+        ld bc,3*256+8               ;reg 8-10
+isapt31 ld a,c
+        out (ISA_AY_INDEX),a
+        ld a,(hl)
+        inc hl
+        and #1f
+        out (ISA_AY_WRITE),a
+        inc c
+        djnz isapt31
+
+        ld hl,(VARS1+VRS_AYREGS+11) ;reg 11-12 -> hardware envelope
+isapt36 add hl,hl
+        ld a,11
+        out (ISA_AY_INDEX),a
+        ld a,l
+        out (ISA_AY_WRITE),a
+        ld a,12
+        out (ISA_AY_INDEX),a
+        ld a,h
+        out (ISA_AY_WRITE),a
+        ret
+
+isapt32 add hl,hl                   ;send tone register
+        inc h:dec h
+        jr nz,isapt34
+        ld a,l
+        cp 16
+        jr nc,isapt33
+        ld l,16
+isapt33 ld a,c                  ;high=0
+        out (ISA_AY_INDEX),a
+        ld a,l
+        out (ISA_AY_WRITE),a    ;set low first
+        ld a,c:inc a
+        out (ISA_AY_INDEX),a
+        ld a,h
+        and #1f     ;##
+        out (ISA_AY_WRITE),a
+        ret
+isapt34 ld a,c:inc a            ;high>0
+        out (ISA_AY_INDEX),a
+        ld a,h
+        and #1f     ;##
+        out (ISA_AY_WRITE),a    ;set high first
+        ld a,c
+        out (ISA_AY_INDEX),a
+        ld a,l
+        out (ISA_AY_WRITE),a
+        ret
 
 
 ;==============================================================================
